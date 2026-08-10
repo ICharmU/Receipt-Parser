@@ -1,0 +1,9 @@
+name: cogs9
+dependencies:
+  - numpy
+  - pandas
+  - selenium
+  - bs4
+  - requests
+  - python-dotenv
+  
