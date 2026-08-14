@@ -74,9 +74,9 @@ def get_page_href(pid, max_pid):
     # shift = (130 - 127) * 2 = 6
     # => ctl_num = 12
 
-    ctl_num = 2*pid
+    ctl_num = 2*(pid+1) # continue instead of re-reading first page (this is the same page as the previous page list from `...`)
     if pid > 11:
-        ctl_num = (ctl_num - 22) + 4 # account for leading ... and re-reading ctl04, which was already shown from the prior ctl24
+        ctl_num = (ctl_num - 22) + 2 # account for leading ... 
 
         ctl_num = (ctl_num - 6) % 20 + 6 # iterate on trailing ...
 
@@ -84,11 +84,9 @@ def get_page_href(pid, max_pid):
     shift = 10 * math.ceil(max_pid / 10) - max_pid
     if pid > 11 and max_pid - pid < 10 - shift - 1:
         full_shift = shift * 2
-        print(f"full_shift = {full_shift}")
-        print(f"ctl_num originally = {ctl_num}")
         ctl_num = (ctl_num+full_shift-6) % 20 + 6
-        print(f"ctl_num now = {ctl_num}")
 
+    print(f"pid = {pid}, ctl_num = {ctl_num}")
     return rf"javascript:__doPostBack('ctl00$MainContent$ResultRadGrid$ctl00$ctl03$ctl01$ctl{ctl_num:02}','')"
 
 def get_offset(page_start: int, page_end:int) -> int:
@@ -106,7 +104,7 @@ def get_offset(page_start: int, page_end:int) -> int:
     if page_start <= page_end <= 11:
         return 0
 
-    offset = math.ceil((page_end - 11) / 10) + 1 # not in first page of 11
+    offset = math.ceil((page_end - 11) / 10) 
 
     return offset
 
@@ -126,18 +124,21 @@ def get_page_list(page_start: int, page_end: int, max_page: int, driver):
     """
     # offset can be functionalized
     offset = get_offset(page_start, page_end)
+    print(offset)
 
+    print("starting offset")
     # go to new page list
     for list_pid in range(offset):
         if list_pid == 0:
             curr_page_href = get_page_href(10, max_page) # no leading previous page element on first list
         else:
-            curr_page_href = get_page_href(10*list_pid+1, max_page) # offset 1 to account for leading previous page list `...`
+            curr_page_href = get_page_href(10*list_pid+11, max_page) # offset 1 to account for leading previous page list `...`
 
         page_field = driver.find_element(By.XPATH, f"""//a[@href="{curr_page_href}"]""")
         page_field.click()
 
         time.sleep(5)
+    print("ending offset")
 
     pages_subset = dict()
 
@@ -148,7 +149,7 @@ def get_page_list(page_start: int, page_end: int, max_page: int, driver):
         # save current page
         page_field = driver.find_element(By.ID, "ctl00_MainContent_ResultRadGrid_ctl00")
         page_content = page_field.get_attribute("innerHTML")
-        pages_subset[pid-1] = page_content
+        pages_subset[pid] = page_content
 
         # update to next page
         next_page_field = driver.find_element(By.XPATH, f"""//a[@href="{curr_page_href}"]""")
@@ -199,9 +200,9 @@ def main(UCSD_USERNAME, UCSD_PASSWORD, options=Options()):
             raise e
 
         print(f"There are a total of {num_pages} pages")
-        num_page_seq = get_offset(0, num_pages)
-        print(f"There will be {num_page_seq} page lists")
-        for page_seq in range(0,num_page_seq):
+        num_page_seq = get_offset(0, num_pages) + 1 # first page is not offset
+        print(f"There will be {num_page_seq} page lists") 
+        for page_seq in range(0,num_page_seq): # 0 <-> 12
             # Restart 25 viewings counter in new window
             driver.switch_to.new_window('tab')
             driver.get(url)
