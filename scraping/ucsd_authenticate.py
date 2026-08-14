@@ -148,7 +148,7 @@ def get_page_list(page_start: int, page_end: int, max_page: int, driver):
         # save current page
         page_field = driver.find_element(By.ID, "ctl00_MainContent_ResultRadGrid_ctl00")
         page_content = page_field.get_attribute("innerHTML")
-        pages_subset[pid] = page_content
+        pages_subset[pid-1] = page_content
 
         # update to next page
         next_page_field = driver.find_element(By.XPATH, f"""//a[@href="{curr_page_href}"]""")
@@ -159,6 +159,11 @@ def get_page_list(page_start: int, page_end: int, max_page: int, driver):
             time.sleep(5) 
         except Exception as e:
             print(e)
+
+    page_field = driver.find_element(By.ID, "ctl00_MainContent_ResultRadGrid_ctl00")
+    page_content = page_field.get_attribute("innerHTML")
+    pages_subset[pid] = page_content
+
 
     return pages_subset
 
@@ -185,7 +190,7 @@ def main(UCSD_USERNAME, UCSD_PASSWORD, options=Options()):
         # page number
         pages_field = driver.find_element(By.CSS_SELECTOR, ".rgWrap.rgInfoPart")
         pages_html = pages_field.get_attribute("innerHTML")
-        pages_soup = BeautifulSoup(pages_html)
+        pages_soup = BeautifulSoup(pages_html, features="html.parser")
         try:
             # total number of pages
             num_pages = int(pages_soup.find_all("strong")[1].text)

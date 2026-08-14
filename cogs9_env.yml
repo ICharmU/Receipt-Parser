@@ -1,5 +1,6 @@
 name: cogs9
 dependencies:
+  - ipykernel
   - numpy
   - pandas
   - selenium
