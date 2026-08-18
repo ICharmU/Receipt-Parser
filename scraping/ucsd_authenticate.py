@@ -24,6 +24,7 @@ def load_url():
 # driver --> this.driver
 # username/password --> this.username, this.password
 
+# Update w/ Playwright
 def login(UCSD_USERNAME, UCSD_PASSWORD, driver):
     username_field = driver.find_element(By.ID, "ssousername")
     password_field = driver.find_element(By.ID, "ssopassword")
@@ -32,6 +33,7 @@ def login(UCSD_USERNAME, UCSD_PASSWORD, driver):
     driver.execute_script(f"arguments[0].value = '{UCSD_PASSWORD}'", password_field)
     password_field.send_keys(Keys.ENTER)
 
+# Update w/ Playwright
 def search_all(driver):
     transaction_start_field = driver.find_element(By.ID, "ctl00_MainContent_BeginRadDateTimePicker_dateInput")
     driver.execute_script("arguments[0].value = '1/1/2000 12:00 AM'", transaction_start_field)
@@ -110,6 +112,7 @@ def get_offset(page_start: int, page_end:int) -> int:
 
     
 
+# Update w/ Playwright
 def get_page_list(page_start: int, page_end: int, max_page: int, driver):
     """
     Retrieve a set of pages based on absolute starting and ending page numbers
@@ -169,6 +172,7 @@ def get_page_list(page_start: int, page_end: int, max_page: int, driver):
     return pages_subset
 
 
+# Update w/ Playwright
 def main(UCSD_USERNAME, UCSD_PASSWORD, options=Options()):
     with webdriver.Chrome(options) as driver:
         url = load_url()
@@ -229,6 +233,7 @@ def main(UCSD_USERNAME, UCSD_PASSWORD, options=Options()):
 
         time.sleep(2000)
 
+# Update w/ Playwright
 if __name__ == "__main__":
     load_dotenv()
     UCSD_USERNAME = os.environ.get("UCSD_USERNAME", "No username found")
