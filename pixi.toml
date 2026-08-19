@@ -1,0 +1,18 @@
+[workspace]
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+
+[dependencies]
+ipykernel = "*"
+numpy = "*"
+pandas = "*"
+bs4 = "*"
+requests = "*"
+python-dotenv = "*"
+
+[pypi-dependencies]
+playwright = "*"
+pytest-playwright = "*"
+
