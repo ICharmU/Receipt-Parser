@@ -138,7 +138,7 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
         if pid != 1 and (offset != 0 or pid > page_start):
             curr_page_href = get_page_href(pid, max_page)
             print(f"Visiting page: {pid}. href = {curr_page_href}")
-            wait_for_table_update(page, curr_page_href)
+            await wait_for_table_update(page, curr_page_href)
             
         grid_locator = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
         pages_subset[pid] = await grid_locator.inner_html()
