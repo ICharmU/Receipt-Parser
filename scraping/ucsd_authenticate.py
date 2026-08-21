@@ -3,10 +3,8 @@ from dotenv import load_dotenv
 import os
 from bs4 import BeautifulSoup
 import math
-import time
-
 import asyncio
-from playwright.async_api import async_playwright, Playwright
+from playwright.async_api import async_playwright
 
 
 def load_url():
@@ -19,9 +17,11 @@ def load_url():
     url = auth_url["url"]
     return url
 
+
 # replacing with a class would be cleaner
 # driver --> this.driver
 # username/password --> this.username, this.password
+
 
 async def login(UCSD_USERNAME, UCSD_PASSWORD, page):
     username_field = page.locator("#ssousername")
@@ -33,9 +33,11 @@ async def login(UCSD_USERNAME, UCSD_PASSWORD, page):
     login_button = page.locator("""button[type="submit"]""")
     await login_button.click()
 
+
 async def duo_login(page):
     user_device_button = page.get_by_text(r"No, other people use this device")
     await user_device_button.click()
+
 
 async def search_all(page):
     transaction_start_field = page.locator("#ctl00_MainContent_BeginRadDateTimePicker_dateInput")
@@ -44,15 +46,19 @@ async def search_all(page):
     search_button = page.locator("#MainContent_ContinueButton")
     await search_button.click()
 
+
 def get_page_href(pid, max_pid):
     """
     Args:
         pid: 1-indexed
     """
-    ctl_num = 2*pid # continue instead of re-reading first page (this is the same page as the previous page list from `...`)
+    # continue instead of re-reading first page (this is the same page as the previous page list from `...`)
+    ctl_num = 2*pid 
     if pid > 11:
-        ctl_num = (ctl_num - 22) + 4 # account for leading ... and repeated 11, 21, 31, etc. from trailiing ... on previous page
-        ctl_num = (ctl_num - 6) % 20 + 6 # iterate on trailing ...
+        # account for leading ... and repeated 11, 21, 31, etc. from trailiing ... on previous page
+        ctl_num = (ctl_num - 22) + 4 
+        # iterate on trailing ...
+        ctl_num = (ctl_num - 6) % 20 + 6 
 
 
     shift = 10 * math.ceil(max_pid / 10) - max_pid
@@ -62,6 +68,7 @@ def get_page_href(pid, max_pid):
 
     print(f"pid = {pid}, ctl_num = {ctl_num}")
     return rf"javascript:__doPostBack('ctl00$MainContent$ResultRadGrid$ctl00$ctl03$ctl01$ctl{ctl_num:02}','')"
+
 
 def get_offset(page_start: int, page_end:int) -> int:
     """
@@ -83,7 +90,24 @@ def get_offset(page_start: int, page_end:int) -> int:
     return offset
 
 
-# Update w/ Playwright
+async def wait_for_table_update(page, page_href):
+    page_field = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
+    page_content = await page_field.inner_html()
+
+    next_page_field = page.locator(f"""a[href="{page_href}"]""")
+    await next_page_field.click()
+
+    await page.wait_for_function(
+        """
+        oldHTML => {
+            const grid = document.querySelector("#ctl00_MainContent_ResultRadGrid_ctl00");
+            return grid && grid.innerHTML !== oldHTML;
+        }
+        """,
+        arg=page_content
+    )
+
+
 async def get_page_list(page_start: int, page_end: int, max_page: int, page):
     """
     Retrieve a set of pages based on absolute starting and ending page numbers
@@ -96,11 +120,8 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
     Returns:
         pages_subset: a dictionary containing up to 11 page numbers
     """
-    # offset can be functionalized
     offset = get_offset(page_start, page_end)
-    print(offset)
 
-    print("starting offset")
     # go to new page list
     for list_pid in range(offset):
         if list_pid == 0:
@@ -108,45 +129,25 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
         else:
             curr_page_href = get_page_href(10*list_pid+11, max_page) # offset 1 to account for leading previous page list `...`
 
-        page_field = page.locator(f"""a[href="{curr_page_href}"]""")
-        await page_field.click()
-
-    print("ending offset")
+        # wait for table to fill to update before continuing
+        await wait_for_table_update(page, curr_page_href)
 
     pages_subset = dict()
 
-    # scrape page list
+    # scrape page list (i.e. a set of pages)
     for pid in range(page_start, page_end+1):
-        curr_page_href = get_page_href(pid, max_page)
-        print(f"Visiting page: {pid}. href = {curr_page_href}")
-        # save current page
-        page_field = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
-        page_content = await page_field.inner_html()
-        pages_subset[pid] = page_content
-
-        # update to next page
-        next_page_field = page.locator(f"""a[href="{curr_page_href}"]""")
-        await next_page_field.click()
-        # url doesn't change, but data takes a few seconds to update
-        # try replacing with implicit wait later
-        if pid != 1 and pid != 11:
-            await page.wait_for_function(
-                """
-                oldHTML => {
-                    const grid = document.querySelector("#ctl00_MainContent_ResultRadGrid_ctl00");
-                    return grid && grid.innerHTML !== oldHTML;
-                }
-                """,
-                arg=page_content
-            )
-
-    page_field = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
-    page_content = await page_field.inner_html()
-    pages_subset[pid] = page_content
+        # if the page number is page_start, then the page will stall as the table has already been loaded and will not update
+        if pid != 1 and (offset != 0 or pid > page_start):
+            curr_page_href = get_page_href(pid, max_page)
+            print(f"Visiting page: {pid}. href = {curr_page_href}")
+            await wait_for_table_update(page, curr_page_href)
+            
+        grid_locator = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
+        pages_subset[pid] = await grid_locator.inner_html()
 
     return pages_subset
 
-# Update w/ Playwright
+
 async def run(UCSD_USERNAME, UCSD_PASSWORD, playwright):
     chromium = playwright.chromium
     browser = await chromium.launch(
@@ -198,7 +199,7 @@ async def run(UCSD_USERNAME, UCSD_PASSWORD, playwright):
         else:
             start, end = 10*page_seq + 2, min(10*page_seq + 11, num_pages)
 
-        print(f"Start = {start}, End = {end}")
+        # print(f"Start = {start}, End = {end}")
         curr_page_list = await get_page_list(start, end, num_pages, new_tab)
         # pages have unique identifiers so update is lossless
         pages.update(curr_page_list)
@@ -207,14 +208,12 @@ async def run(UCSD_USERNAME, UCSD_PASSWORD, playwright):
     with open("data/raw.json", "w") as f:
         json.dump(pages, f)
 
-    time.sleep(15000)
-
 
 async def main(UCSD_USERNAME, UCSD_PASSWORD):
     async with async_playwright() as playwright:
         await run(UCSD_USERNAME, UCSD_PASSWORD, playwright)
 
-# Update w/ Playwright
+
 if __name__ == "__main__":
     load_dotenv()
     UCSD_USERNAME = os.environ.get("UCSD_USERNAME", "No username found")
