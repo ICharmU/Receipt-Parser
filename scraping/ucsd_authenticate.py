@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 import math
 import asyncio
 from playwright.async_api import async_playwright
-
+import sys
 
 def load_url():
     """
@@ -66,7 +66,7 @@ def get_page_href(pid, max_pid):
         full_shift = shift * 2
         ctl_num = (ctl_num+full_shift-6) % 20 + 6
 
-    print(f"pid = {pid}, ctl_num = {ctl_num}")
+    # print(f"pid = {pid}, ctl_num = {ctl_num}")
     return rf"javascript:__doPostBack('ctl00$MainContent$ResultRadGrid$ctl00$ctl03$ctl01$ctl{ctl_num:02}','')"
 
 
@@ -139,7 +139,8 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
         # if the page number is page_start, then the page will stall as the table has already been loaded and will not update
         if pid != 1 and (offset != 0 or pid > page_start):
             curr_page_href = get_page_href(pid, max_page)
-            print(f"Visiting page: {pid}. href = {curr_page_href}")
+            print(f"Visiting page: {pid}")
+            # print(f"Visiting page: {pid}. href = {curr_page_href}")
             await wait_for_table_update(page, curr_page_href)
             
         grid_locator = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
@@ -148,10 +149,34 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
     return pages_subset
 
 
-async def run(UCSD_USERNAME, UCSD_PASSWORD, playwright):
+def get_page_range(page_seq, total_num_pages):
+    if page_seq == 0:
+        if total_num_pages <= 11:
+            start, end = 1, total_num_pages
+        else:
+            start, end = 1, 11
+    else:
+        start, end = 10*page_seq + 2, min(10*page_seq + 11, total_num_pages)
+    return start, end
+
+
+async def process_sequence(page_seq, num_pages, context, url, semaphore):
+    async with semaphore:
+        tab = await context.new_page()
+        try:
+            await tab.goto(url)
+            await search_all(tab)
+            start, end = get_page_range(page_seq, num_pages)
+            curr_page_list = await get_page_list(start, end, num_pages, tab)
+            return curr_page_list
+        finally:
+            await tab.close()
+
+
+async def run(UCSD_USERNAME, UCSD_PASSWORD, playwright, n_tabs):
     chromium = playwright.chromium
     browser = await chromium.launch(
-        headless=False, 
+        headless=True, 
         args = [
             "--start-maximized",
         ],
@@ -185,33 +210,27 @@ async def run(UCSD_USERNAME, UCSD_PASSWORD, playwright):
     print(f"There are {num_pages} pages")
     num_page_seq = get_offset(0, num_pages) + 1 # first page is not offset
     print(f"There will be {num_page_seq} page lists") 
-    for page_seq in range(0,num_page_seq): # 0 <-> 12
-        # Restart 25 viewings counter in new window
-        new_tab = await context.new_page()
-        await new_tab.goto(url)
-        await search_all(new_tab)
 
-        if page_seq == 0:
-            if num_pages <= 11:
-                start, end = 1, num_pages
-            else:
-                start, end = 1, 11
-        else:
-            start, end = 10*page_seq + 2, min(10*page_seq + 11, num_pages)
+    # no point in having more workers than pages
+    n_tabs = min(n_tabs, num_pages)
+    semaphore = asyncio.Semaphore(n_tabs)
+    tasks = [
+        process_sequence(page_seq, num_pages, context, url, semaphore) for page_seq in range(num_page_seq)
+    ]
+    results = await asyncio.gather(*tasks)
 
-        # print(f"Start = {start}, End = {end}")
-        curr_page_list = await get_page_list(start, end, num_pages, new_tab)
-        # pages have unique identifiers so update is lossless
-        pages.update(curr_page_list)
+    pages = dict()
+    for page_list in results:
+        pages.update(page_list)
 
     # save all pages
     with open("data/raw.json", "w") as f:
         json.dump(pages, f)
 
 
-async def main(UCSD_USERNAME, UCSD_PASSWORD):
+async def main(UCSD_USERNAME, UCSD_PASSWORD, n_tabs=1):
     async with async_playwright() as playwright:
-        await run(UCSD_USERNAME, UCSD_PASSWORD, playwright)
+        await run(UCSD_USERNAME, UCSD_PASSWORD, playwright, n_tabs=n_tabs)
 
 
 if __name__ == "__main__":
@@ -219,4 +238,6 @@ if __name__ == "__main__":
     UCSD_USERNAME = os.environ.get("UCSD_USERNAME", "No username found")
     UCSD_PASSWORD = os.environ.get("UCSD_PASSWORD", "No password found")
 
-    asyncio.run(main(UCSD_USERNAME, UCSD_PASSWORD))
+    # if > 15 workers there may be unrelated errors as there are 10 items per page and ~25 total queries allowed = 15 offset queries => 15 workers produces max degree of parallelism
+    n_tabs = min(int(sys.argv[1]), 15)
+    asyncio.run(main(UCSD_USERNAME, UCSD_PASSWORD, n_tabs=n_tabs))
