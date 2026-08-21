@@ -83,6 +83,24 @@ def get_offset(page_start: int, page_end:int) -> int:
     return offset
 
 
+async def wait_for_table_update(page, page_href):
+    page_field = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
+    page_content = await page_field.inner_html()
+
+    next_page_field = page.locator(f"""a[href="{page_href}"]""")
+    await next_page_field.click()
+
+    await page.wait_for_function(
+        """
+        oldHTML => {
+            const grid = document.querySelector("#ctl00_MainContent_ResultRadGrid_ctl00");
+            return grid && grid.innerHTML !== oldHTML;
+        }
+        """,
+        arg=page_content
+    )
+
+
 # Update w/ Playwright
 async def get_page_list(page_start: int, page_end: int, max_page: int, page):
     """
@@ -98,7 +116,6 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
     """
     # offset can be functionalized
     offset = get_offset(page_start, page_end)
-    print(offset)
 
     print("starting offset")
     # go to new page list
@@ -108,8 +125,8 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
         else:
             curr_page_href = get_page_href(10*list_pid+11, max_page) # offset 1 to account for leading previous page list `...`
 
-        page_field = page.locator(f"""a[href="{curr_page_href}"]""")
-        await page_field.click()
+        # wait for table to fill to update before continuing
+        await wait_for_table_update(page, curr_page_href)
 
     print("ending offset")
 
@@ -117,32 +134,14 @@ async def get_page_list(page_start: int, page_end: int, max_page: int, page):
 
     # scrape page list
     for pid in range(page_start, page_end+1):
-        curr_page_href = get_page_href(pid, max_page)
-        print(f"Visiting page: {pid}. href = {curr_page_href}")
-        # save current page
-        page_field = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
-        page_content = await page_field.inner_html()
-        pages_subset[pid] = page_content
-
-        # update to next page
-        next_page_field = page.locator(f"""a[href="{curr_page_href}"]""")
-        await next_page_field.click()
-        # url doesn't change, but data takes a few seconds to update
-        # try replacing with implicit wait later
-        if pid != 1 and pid != 11:
-            await page.wait_for_function(
-                """
-                oldHTML => {
-                    const grid = document.querySelector("#ctl00_MainContent_ResultRadGrid_ctl00");
-                    return grid && grid.innerHTML !== oldHTML;
-                }
-                """,
-                arg=page_content
-            )
-
-    page_field = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
-    page_content = await page_field.inner_html()
-    pages_subset[pid] = page_content
+        # if the page number is page_start, then the page will stall as the table has already been loaded and will not update
+        if pid != 1 and (offset != 0 or pid > page_start):
+            curr_page_href = get_page_href(pid, max_page)
+            print(f"Visiting page: {pid}. href = {curr_page_href}")
+            wait_for_table_update(page, curr_page_href)
+            
+        grid_locator = page.locator("#ctl00_MainContent_ResultRadGrid_ctl00")
+        pages_subset[pid] = await grid_locator.inner_html()
 
     return pages_subset
 
